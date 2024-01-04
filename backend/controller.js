@@ -1,64 +1,44 @@
 const { Payment } = require("./model");
-const razorpay = require('razorpay');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const crypto = require('crypto');
 
 //Checkout
 exports.checkout = async(req, res, next) =>{
-
-    console.log(req.body.amount)
-
-    const instance = new razorpay({
-        key_id: process.env.KEY_ID,
-        key_secret: process.env.KEY_SECRET
-    });
-
     try {
-
-        const options = {
-            amount: Number(req.body.amount*100),
-            currency: 'INR',
-            
-        }
-    
-        const order = await instance.orders.create(options);
-
-        console.log(order);
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"],
+            mode: 'payment',
+            line_items: req.body.items.map((item)=>{
+                return {
+                    price_data:{
+                        currency: 'inr',
+                        product_data: {
+                            name:item.name
+                        },
+                        unit_amount:(item.price)*100
+                    },
+                    quantity: item.quantity
+                }
+            }),
+            success_url: 'http://localhost:5173/success',
+            cancel_url: 'http://localhost:5173/cancel',
+        });
 
         res.status(201).json({
-            success: true,
-            order
+            url: session.url
         })
-
-        
     } catch (error) {
-        console.log(error);
+        res.status(500).json({
+            error: error.message
+        });
     }
-   
 }
 
 //Verification
 exports.verification = async(req, res, next) =>{
 
-    const {razorpay_order_id, razorpay_payment_id, razorpay_signature} = req.body;
-    const body = razorpay_order_id + " " + razorpay_payment_id;
-    const expectedSignature = crypto.createHmac('sha256', process.env.KEY_SECRET).update(body.toString()).digest()
-
-    const isAuth = expectedSignature === razorpay_signature;
-
-    if(isAuth){
-        await Payment.create({razorpay_order_id, razorpay_payment_id, razorpay_signature})
-        res.redirect(`http://localhost:5173/paymentsuccess?refrene=${razorpay_payment_id}`)
-    }else{
-        res.status(400).json({
-            success: false
-        })
-    }
-
-
 }
 
 exports.geKey = (req, res)=>{
-    res.status(200).json({
-        key:process.env.KEY_ID
-    })
+  
 }
